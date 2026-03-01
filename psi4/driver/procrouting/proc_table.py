@@ -297,6 +297,10 @@ for key in functionals:
     if not ssuper.is_gga(): # N.B. this eliminates both GGA and m-GGA, as the latter contains GGA terms
         procedures['hessian'][key] = proc.run_scf_hessian
 
+# Integrate aPBE0 (adaptive PBE0) with driver routines
+procedures['energy']['apbe0'] = proc.run_apbe0
+procedures['gradient']['apbe0'] = proc.run_apbe0_gradient
+
 # Integrate CFOUR with driver routines
 for ssuper in interface_cfour.cfour_list():
     procedures['energy'][ssuper.lower()] = interface_cfour.run_cfour

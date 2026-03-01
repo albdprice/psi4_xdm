@@ -5809,3 +5809,71 @@ def run_efp(name, **kwargs):
         core.set_variable("EFP TORQUE", torq)  # P::e EFP
 
     return ene['total']
+
+
+def _apbe0_predict_and_build(molecule):
+    """Predict the aPBE0 exchange fraction and construct a functional dictionary.
+
+    Parameters
+    ----------
+    molecule : psi4.core.Molecule
+
+    Returns
+    -------
+    apbe0_dict : dict
+        Functional dictionary for use with dft_functional kwarg.
+    alpha : float
+        The predicted HF exchange fraction.
+    """
+    from .dft.apbe0_predictor import predict_alpha
+
+    alpha, is_fallback, info = predict_alpha(molecule)
+
+    core.print_out("\n  ==> aPBE0: Adaptive PBE0 <==\n\n")
+    core.print_out(f"    Predicted HF exchange fraction (alpha): {alpha:.6f}\n")
+
+    if is_fallback:
+        core.print_out(f"    WARNING: Falling back to standard PBE0 (alpha=0.25)\n")
+        core.print_out(f"    Reason: {info}\n")
+    else:
+        core.print_out(f"    Uncertainty metric: {info['uncertainty']:.6f}\n")
+        core.print_out(f"    Delta from PBE0: {info['delta']:+.6f}\n")
+        core.print_out(f"    Cutoff factor: {info['cutoff_factor']:.6f}\n")
+
+    core.print_out("\n")
+
+    core.set_variable("APBE0 PREDICTED ALPHA", alpha)
+
+    apbe0_dict = {
+        "name": "aPBE0",
+        "x_functionals": {"GGA_X_PBE": {"alpha": 1.0 - alpha}},
+        "x_hf": {"alpha": alpha},
+        "c_functionals": {"GGA_C_PBE": {}},
+        "description": f"    aPBE0 Adaptive Hybrid GGA XC Functional (alpha={alpha:.4f})\n",
+        "citation": "    Khan, D. et al., Sci. Adv. (2024)\n",
+    }
+
+    return apbe0_dict, alpha
+
+
+def run_apbe0(name, **kwargs):
+    """Function encoding sequence of PSI module calls for
+    an aPBE0 (adaptive PBE0) calculation.
+
+    aPBE0 uses an ML model to predict the optimal HF exact-exchange
+    fraction, then runs PBE0 with that fraction.
+    """
+    molecule = kwargs.get('molecule', core.get_active_molecule())
+    apbe0_dict, alpha = _apbe0_predict_and_build(molecule)
+    return run_scf('scf', dft_functional=apbe0_dict, **kwargs)
+
+
+def run_apbe0_gradient(name, **kwargs):
+    """Function encoding sequence of PSI module calls for
+    an aPBE0 (adaptive PBE0) gradient calculation.
+
+    The exchange fraction is recomputed at the current geometry.
+    """
+    molecule = kwargs.get('molecule', core.get_active_molecule())
+    apbe0_dict, alpha = _apbe0_predict_and_build(molecule)
+    return select_scf_gradient('scf', dft_functional=apbe0_dict, **kwargs)
