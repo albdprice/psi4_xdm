@@ -26,6 +26,10 @@ DEFAULT_ALPHA = 0.25
 # Uncertainty threshold for fallback to default PBE0
 DEFAULT_UNCERTAINTY_THRESHOLD = 0.7
 
+# Elements supported by the aPBE0 training set (H, C, N, O, F, S, Cl)
+SUPPORTED_ELEMENTS = {1, 6, 7, 8, 9, 16, 17}
+_ELEMENT_NAMES = {1: 'H', 6: 'C', 7: 'N', 8: 'O', 9: 'F', 16: 'S', 17: 'Cl'}
+
 
 def _load_model():
     """Load the trained aPBE0 KRR model from the data directory."""
@@ -120,6 +124,17 @@ def predict_alpha(molecule, uncertainty_threshold=DEFAULT_UNCERTAINTY_THRESHOLD)
     # Psi4 stores geometry in Bohr; cMBDF expects Angstrom
     coords = molecule.geometry().np * constants.bohr2angstroms
     mol_charge = int(molecule.molecular_charge())
+
+    # Check element coverage
+    unsupported = set(int(z) for z in charges) - SUPPORTED_ELEMENTS
+    if unsupported:
+        elem_strs = ', '.join(f'Z={z}' for z in sorted(unsupported))
+        supported_strs = ', '.join(_ELEMENT_NAMES[z] for z in sorted(SUPPORTED_ELEMENTS))
+        return DEFAULT_ALPHA, True, (
+            f"Unsupported element(s): {elem_strs}. "
+            f"aPBE0 model supports: {supported_strs}. "
+            f"Falling back to standard PBE0."
+        )
 
     # Print a message on first numba JIT compilation
     if _FIRST_JIT_CALL:

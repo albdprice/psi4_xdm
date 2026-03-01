@@ -227,3 +227,82 @@ class TestAPBE0Gradient:
         # Gradient matrix should have shape (natom, 3)
         gmat = g.np
         assert gmat.shape == (2, 3)
+
+
+class TestAPBE0Optimization:
+    """Tests for aPBE0 geometry optimization.
+
+    Note: aPBE0 optimization is experimental. The exchange fraction alpha is
+    recomputed at each geometry step, so the PES is not strictly variational.
+    This may cause convergence issues for some systems.
+    """
+
+    @pytest.mark.long
+    def test_optimize_h2(self):
+        """Test that optimize('aPBE0') completes for H2.
+
+        Marked as 'long' since optimization convergence is not guaranteed
+        for all systems due to the geometry-dependent alpha.
+        """
+        h2 = psi4.geometry("""
+            0 1
+            H  0.0  0.0  0.0
+            H  0.0  0.0  0.80
+            symmetry c1
+        """)
+        # Start with a stretched bond (0.80 A) to give optimizer something to do
+        e = psi4.optimize('aPBE0', molecule=h2)
+        assert isinstance(e, float)
+        assert e < 0.0
+
+        # Check that the bond length changed (optimized toward equilibrium)
+        final_geom = h2.geometry().np
+        bond_length_bohr = np.linalg.norm(final_geom[1] - final_geom[0])
+        bond_length_ang = bond_length_bohr * psi4.constants.bohr2angstroms
+        # Equilibrium H-H is ~0.74 A, started at 0.80 A
+        assert 0.70 < bond_length_ang < 0.78
+
+
+class TestAPBE0ElementCoverage:
+    """Tests for element coverage validation."""
+
+    def test_unsupported_element_fallback(self):
+        """Test that molecules with unsupported elements fall back to PBE0."""
+        from psi4.driver.procrouting.dft.apbe0_predictor import predict_alpha
+
+        # LiH contains lithium (Z=3), which is not in the training set
+        lih = psi4.geometry("""
+            0 1
+            Li  0.0  0.0  0.0
+            H   0.0  0.0  1.6
+            symmetry c1
+        """)
+        alpha, is_fallback, info = predict_alpha(lih)
+        assert is_fallback
+        assert alpha == 0.25
+        assert 'Unsupported' in info
+        assert 'Z=3' in info
+
+    def test_supported_elements_no_fallback(self, methane_qm7b):
+        """Test that molecules with only supported elements don't trigger element fallback."""
+        from psi4.driver.procrouting.dft.apbe0_predictor import predict_alpha
+
+        alpha, is_fallback, info = predict_alpha(methane_qm7b)
+        # Methane (C, H) should not trigger element fallback
+        # (may still fall back due to uncertainty, but not due to elements)
+        if is_fallback:
+            assert 'Unsupported' not in info
+
+    def test_energy_with_unsupported_element(self):
+        """Test that energy('aPBE0') still works with unsupported elements (falls back to PBE0)."""
+        lih = psi4.geometry("""
+            0 1
+            Li  0.0  0.0  0.0
+            H   0.0  0.0  1.6
+            symmetry c1
+        """)
+        e = psi4.energy('aPBE0', molecule=lih)
+        assert isinstance(e, float)
+        assert e < 0.0
+        # Should have fallen back to alpha=0.25
+        assert psi4.core.variable('APBE0 PREDICTED ALPHA') == 0.25

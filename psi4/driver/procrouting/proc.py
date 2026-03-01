@@ -5873,6 +5873,13 @@ def run_apbe0_gradient(name, **kwargs):
     an aPBE0 (adaptive PBE0) gradient calculation.
 
     The exchange fraction is recomputed at the current geometry.
+
+    .. warning::
+        Geometry optimization with aPBE0 is experimental. The exchange
+        fraction alpha varies with molecular geometry, so the potential
+        energy surface is not strictly variational. The gradient at each
+        step is consistent with that step's alpha, but alpha may change
+        between steps.
     """
     molecule = kwargs.get('molecule', core.get_active_molecule())
     apbe0_dict, alpha = _apbe0_predict_and_build(molecule)
