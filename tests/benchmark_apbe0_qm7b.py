@@ -26,7 +26,7 @@ def run_standalone():
     from scipy.linalg import cho_solve
     from numba import njit
 
-    WORKSPACE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     MODEL_PATH = os.environ.get('APBE0_MODEL_PATH',
         os.path.join(WORKSPACE, 'psi4', 'driver', 'procrouting', 'dft', 'data', 'apbe0_model.npz'))
     QM7B_PATH = os.environ.get('QM7B_DATA_PATH',
