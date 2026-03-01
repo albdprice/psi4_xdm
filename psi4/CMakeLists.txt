@@ -328,6 +328,7 @@ if(NOT ENABLE_CYTHONIZE)
             DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}${PYMOD_INSTALL_LIBDIR}/psi4
             FILES_MATCHING
               PATTERN "*.py"
+              PATTERN "*.npz"
               PATTERN pytest EXCLUDE
       )
 endif()

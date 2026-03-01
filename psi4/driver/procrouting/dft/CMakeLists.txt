@@ -26,3 +26,8 @@ foreach(py ${sources})
     install(TARGETS ${py}
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}${PYMOD_INSTALL_LIBDIR}/psi4/driver/procrouting/dft)
 endforeach()
+
+# Install aPBE0 model data
+install(DIRECTORY data
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}${PYMOD_INSTALL_LIBDIR}/psi4/driver/procrouting/dft
+        FILES_MATCHING PATTERN "*.npz")
