@@ -301,6 +301,9 @@ for key in functionals:
 procedures['energy']['apbe0'] = proc.run_apbe0
 procedures['gradient']['apbe0'] = proc.run_apbe0_gradient
 
+# Integrate nLanE-SCAN (non-linear non-empirical double hybrid) with driver routines
+procedures['energy']['nlane-scan'] = proc.run_nlane_scan
+
 # Integrate CFOUR with driver routines
 for ssuper in interface_cfour.cfour_list():
     procedures['energy'][ssuper.lower()] = interface_cfour.run_cfour

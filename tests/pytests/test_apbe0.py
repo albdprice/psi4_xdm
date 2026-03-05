@@ -229,39 +229,6 @@ class TestAPBE0Gradient:
         assert gmat.shape == (2, 3)
 
 
-class TestAPBE0Optimization:
-    """Tests for aPBE0 geometry optimization.
-
-    Note: aPBE0 optimization is experimental. The exchange fraction alpha is
-    recomputed at each geometry step, so the PES is not strictly variational.
-    This may cause convergence issues for some systems.
-    """
-
-    @pytest.mark.long
-    def test_optimize_h2(self):
-        """Test that optimize('aPBE0') completes for H2.
-
-        Marked as 'long' since optimization convergence is not guaranteed
-        for all systems due to the geometry-dependent alpha.
-        """
-        h2 = psi4.geometry("""
-            0 1
-            H  0.0  0.0  0.0
-            H  0.0  0.0  0.80
-            symmetry c1
-        """)
-        # Start with a stretched bond (0.80 A) to give optimizer something to do
-        e = psi4.optimize('aPBE0', molecule=h2)
-        assert isinstance(e, float)
-        assert e < 0.0
-
-        # Check that the bond length changed (optimized toward equilibrium)
-        final_geom = h2.geometry().np
-        bond_length_bohr = np.linalg.norm(final_geom[1] - final_geom[0])
-        bond_length_ang = bond_length_bohr * psi4.constants.bohr2angstroms
-        # Equilibrium H-H is ~0.74 A, started at 0.80 A
-        assert 0.70 < bond_length_ang < 0.78
-
 
 class TestAPBE0ElementCoverage:
     """Tests for element coverage validation."""

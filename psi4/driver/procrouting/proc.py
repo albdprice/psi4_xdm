@@ -5884,3 +5884,160 @@ def run_apbe0_gradient(name, **kwargs):
     molecule = kwargs.get('molecule', core.get_active_molecule())
     apbe0_dict, alpha = _apbe0_predict_and_build(molecule)
     return select_scf_gradient('scf', dft_functional=apbe0_dict, **kwargs)
+
+
+def _compute_hf_exchange_energy(scf_wfn):
+    """Compute HF exact-exchange energy on a converged wavefunction's density.
+
+    Uses the JK integral engine to compute the exchange matrix K, then
+    evaluates E_x^HF = -tr(Da @ Ka) for RKS, or
+    E_x^HF = -0.5*(tr(Da @ Ka) + tr(Db @ Kb)) for UKS.
+    """
+    jk = core.JK.build(scf_wfn.basisset())
+    jk.set_memory(int(0.6 * core.get_memory() / 8))
+    jk.initialize()
+
+    is_uhf = scf_wfn.same_a_b_orbs() == False and scf_wfn.same_a_b_dens() == False
+
+    Ca_occ = scf_wfn.Ca_subset("SO", "OCC")
+    jk.C_left_add(Ca_occ)
+    if is_uhf:
+        Cb_occ = scf_wfn.Cb_subset("SO", "OCC")
+        jk.C_left_add(Cb_occ)
+
+    jk.compute()
+
+    Ka = jk.K()[0]
+    Da = scf_wfn.Da()
+
+    if is_uhf:
+        # UKS: E_x = -0.5 * [tr(Da@Ka) + tr(Db@Kb)]
+        # Each spin channel contributes separately with a factor of 0.5
+        Kb = jk.K()[1]
+        Db = scf_wfn.Db()
+        Exx = -0.5 * (Da.vector_dot(Ka) + Db.vector_dot(Kb))
+    else:
+        # RKS: E_x = -tr(Da@Ka)
+        # Factor of 2 for both spins is implicit (alpha=beta), cancels with 0.5
+        Exx = -Da.vector_dot(Ka)
+
+    jk.finalize()
+    return Exx
+
+
+def run_nlane_scan(name, **kwargs):
+    """Function encoding sequence of PSI module calls for
+    an nLanE-SCAN (non-linear non-empirical double hybrid) calculation.
+
+    nLanE-SCAN derives the XC energy from an adiabatic connection interpolant
+    constrained by exact exchange (HF), perturbative correlation (MP2), and the
+    fully interacting limit (SCAN). Contains no fitted parameters.
+
+    Reference: Khan, D. J. Chem. Phys. 163, 144115 (2025).
+    """
+    from .dft.nlane_scan import (evaluate_xc_energy, compute_nlane_xc,
+                                  SCAN_X_DICT, SCAN_C_DICT,
+                                  R2SCAN_X_DICT, R2SCAN_C_DICT)
+
+    # Determine SCF functional (default: r2SCAN, more robust than SCAN)
+    nlane_scf = kwargs.pop('nlane_scf', 'r2scan')
+    nlane_w1 = kwargs.pop('nlane_w1', 'scan')  # W1 functional, defaults to SCAN (paper recommendation)
+
+    # Select SCF functional
+    scf_func = nlane_scf.lower()
+    if scf_func in ('scan', 'mgga_x_scan'):
+        scf_func_name = 'scan'
+    elif scf_func in ('r2scan', 'mgga_x_r2scan'):
+        scf_func_name = 'r2scan'
+    else:
+        scf_func_name = scf_func
+
+    # Select W1 functional components
+    w1_func = nlane_w1.lower()
+    if w1_func in ('scan', 'mgga_x_scan'):
+        w1_x_dict, w1_c_dict = SCAN_X_DICT, SCAN_C_DICT
+        w1_name = 'SCAN'
+    elif w1_func in ('r2scan', 'mgga_x_r2scan'):
+        w1_x_dict, w1_c_dict = R2SCAN_X_DICT, R2SCAN_C_DICT
+        w1_name = 'r2SCAN'
+    else:
+        raise ValidationError(f"nLanE-SCAN: unsupported W1 functional '{nlane_w1}'. Use 'SCAN' or 'r2SCAN'.")
+
+    core.print_out("\n  ==> nLanE-SCAN: Non-Linear Non-Empirical Double Hybrid <==\n\n")
+    core.print_out(f"    SCF functional: {scf_func_name.upper()}\n")
+    core.print_out(f"    W1 functional:  {w1_name}\n\n")
+
+    # Step 1: Run SCF with the chosen semi-local DFA
+    scf_wfn = run_scf('scf', dft_functional=scf_func_name, **kwargs)
+    E_scf = scf_wfn.energy()
+    Exc_scf = scf_wfn.variable('DFT XC ENERGY')
+
+    is_restricted = (scf_wfn.same_a_b_orbs() and scf_wfn.same_a_b_dens())
+
+    # Step 2: Evaluate HF exchange energy on DFT density
+    core.print_out("    Computing HF exchange energy on DFT density...\n")
+    Exx = _compute_hf_exchange_energy(scf_wfn)
+    core.print_out(f"    E_x^HF     = {Exx:20.12f}\n")
+
+    # Step 3: Evaluate SCAN/r2SCAN exchange and correlation separately
+    core.print_out(f"    Computing {w1_name} exchange and correlation energies...\n")
+    Ex_scan = evaluate_xc_energy(scf_wfn, w1_x_dict, restricted=is_restricted)
+    Ec_scan = evaluate_xc_energy(scf_wfn, w1_c_dict, restricted=is_restricted)
+    W1 = Ex_scan + 2 * Ec_scan
+    core.print_out(f"    E_x^{w1_name:6s} = {Ex_scan:20.12f}\n")
+    core.print_out(f"    E_c^{w1_name:6s} = {Ec_scan:20.12f}\n")
+    core.print_out(f"    W1         = {W1:20.12f}\n")
+
+    # Step 4: Run DF-MP2 on DFT orbitals
+    core.print_out("    Computing MP2 correlation energy...\n")
+    aux_basis = core.BasisSet.build(scf_wfn.molecule(), "DF_BASIS_MP2",
+                                    core.get_option("DFMP2", "DF_BASIS_MP2"),
+                                    "RIFIT", core.get_global_option('BASIS'),
+                                    puream=-1)
+    scf_wfn.set_basisset("DF_BASIS_MP2", aux_basis)
+    dfmp2_wfn = core.dfmp2(scf_wfn)
+    dfmp2_wfn.compute_energy()
+    Ec_MP2 = dfmp2_wfn.variable('MP2 CORRELATION ENERGY')
+    core.print_out(f"    E_c^MP2    = {Ec_MP2:20.12f}\n\n")
+
+    # Clean misleading MP2 psivars (computed with DFT reference)
+    for var in dfmp2_wfn.variables():
+        if var.startswith('MP2 '):
+            scf_wfn.del_variable(var)
+
+    # Step 5: Compute nLanE XC energy
+    Exc_nlane, info = compute_nlane_xc(Exx, Ec_MP2, W1)
+
+    core.print_out("    ==> nLanE AC Parameters <==\n\n")
+    core.print_out(f"    alpha      = {info['alpha']:12.6f}\n")
+    core.print_out(f"    a          = {info['a']:12.6f}\n")
+    core.print_out(f"    b          = {info['b']:12.6f}\n")
+    core.print_out(f"    c          = {info['c']:12.6f}\n\n")
+
+    # Step 6: Final energy = E_SCF - E_xc^SCF + E_xc^nLanE
+    E_nlane = E_scf - Exc_scf + Exc_nlane
+
+    core.print_out("    ==> nLanE-SCAN Energy Summary <==\n\n")
+    core.print_out(f"    SCF Total Energy (DFA)     = {E_scf:22.12f}\n")
+    core.print_out(f"    DFA XC Energy              = {Exc_scf:22.12f}\n")
+    core.print_out(f"    nLanE XC Energy            = {Exc_nlane:22.12f}\n")
+    core.print_out(f"    nLanE Correction           = {Exc_nlane - Exc_scf:22.12f}\n")
+    core.print_out(f"    @nLanE-SCAN Total Energy   = {E_nlane:22.12f}\n\n")
+
+    # Store variables
+    scf_wfn.set_variable("NLANE-SCAN TOTAL ENERGY", E_nlane)
+    scf_wfn.set_variable("NLANE XC ENERGY", Exc_nlane)
+    scf_wfn.set_variable("NLANE AC PARAMETER A", info['a'])
+    scf_wfn.set_variable("NLANE AC PARAMETER B", info['b'])
+    scf_wfn.set_variable("NLANE AC PARAMETER C", info['c'])
+    scf_wfn.set_variable("NLANE HF EXCHANGE ENERGY", Exx)
+    scf_wfn.set_variable("NLANE MP2 CORRELATION ENERGY", Ec_MP2)
+    scf_wfn.set_variable("DFT TOTAL ENERGY", E_nlane)
+    scf_wfn.set_variable("CURRENT ENERGY", E_nlane)
+    scf_wfn.set_energy(E_nlane)
+
+    # Push to global
+    for k, v in scf_wfn.variables().items():
+        core.set_variable(k, v)
+
+    return scf_wfn
