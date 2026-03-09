@@ -180,6 +180,18 @@ R2SCAN_C_DICT = {
     "c_functionals": {"MGGA_C_R2SCAN": {}},
 }
 
+PBE_X_DICT = {
+    "name": "PBE_X_ONLY",
+    "x_functionals": {"GGA_X_PBE": {}},
+    "c_functionals": {},
+}
+
+PBE_C_DICT = {
+    "name": "PBE_C_ONLY",
+    "x_functionals": {},
+    "c_functionals": {"GGA_C_PBE": {}},
+}
+
 HF_X_DICT = {
     "name": "HF_X_ONLY",
     "x_functionals": {},

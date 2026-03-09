@@ -303,6 +303,10 @@ procedures['gradient']['apbe0'] = proc.run_apbe0_gradient
 
 # Integrate nLanE-SCAN (non-linear non-empirical double hybrid) with driver routines
 procedures['energy']['nlane-scan'] = proc.run_nlane_scan
+procedures['energy']['nlane-pbe'] = lambda name, **kw: proc.run_nlane_scan(name, nlane_w1='pbe', **kw)
+procedures['energy']['anlane-scan'] = proc.run_anlane_scan
+procedures['energy']['a-nlane-scan'] = proc.run_anlane_scan
+procedures['energy']['anlane-pbe'] = lambda name, **kw: proc.run_anlane_scan(name, nlane_w1='pbe', **kw)
 
 # Integrate CFOUR with driver routines
 for ssuper in interface_cfour.cfour_list():
