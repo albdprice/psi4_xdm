@@ -5943,8 +5943,6 @@ def run_nlane_scan(name, **kwargs):
     # Determine SCF functional (default: r2SCAN, more robust than SCAN)
     nlane_scf = kwargs.pop('nlane_scf', 'r2scan')
     nlane_w1 = kwargs.pop('nlane_w1', 'scan')  # W1 functional, defaults to SCAN (paper recommendation)
-    nlane_export = kwargs.pop('nlane_export_ingredients', False)  # export AC ingredients for ML training
-
     # Select SCF functional
     scf_func = nlane_scf.lower()
     if scf_func in ('scan', 'mgga_x_scan'):
@@ -6044,11 +6042,10 @@ def run_nlane_scan(name, **kwargs):
     scf_wfn.set_variable("CURRENT ENERGY", E_nlane)
     scf_wfn.set_energy(E_nlane)
 
-    # Export SCF ingredients for ML training (set nlane_export_ingredients=True)
-    if nlane_export:
-        scf_wfn.set_variable("NLANE SCF TOTAL ENERGY", E_scf)
-        scf_wfn.set_variable("NLANE SCF XC ENERGY", Exc_scf)
-        scf_wfn.set_variable("NLANE ALPHA", info['alpha'])
+    # Export all SCF ingredients (always available for ML training / analysis)
+    scf_wfn.set_variable("NLANE SCF TOTAL ENERGY", E_scf)
+    scf_wfn.set_variable("NLANE SCF XC ENERGY", Exc_scf)
+    scf_wfn.set_variable("NLANE ALPHA", info['alpha'])
 
     # Push to global
     for k, v in scf_wfn.variables().items():
